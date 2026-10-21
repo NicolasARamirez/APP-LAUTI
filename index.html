@@ -1111,7 +1111,10 @@ function editCuenta(id, clase){
 function openTarjeta(id){
   const c = db.cuenta[id]; if(!c) return;
   const hoy = todayISO(), Ro = resumenDe(id, hoy);
-  const Rs = [-2, -1, 0, 1, 2, 3].map(k => addMonthsYM(Ro, k));
+  // desde el último resumen cerrado; los más viejos solo si quedó algo sin pagar
+  const debeAlgo = R => { const r = resumenTarjeta(c, R); return r.pagos.ARS < r.ARS - 0.004 || r.pagos.USD < r.USD - 0.004; };
+  const viejos = [-3, -2].map(k => addMonthsYM(Ro, k)).filter(debeAlgo);
+  const Rs = viejos.concat([-1, 0, 1, 2, 3].map(k => addMonthsYM(Ro, k)));
   const futuros = Object.values(db.mov).some(m => m.cuenta === id && m.mes > addMonthsYM(Ro, 3));
   openSheet(`<h3>${esc(c.nombre)}</h3>
     <p class="k" style="margin:-6px 0 6px">Cada resumen junta lo que compraste hasta su cierre. Se cuenta como gasto en el mes en que vence.</p>

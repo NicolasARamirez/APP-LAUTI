@@ -670,7 +670,7 @@ function debenEditor(el, state){
 /* =========================================================
    Vista: Cargar
    ========================================================= */
-const form = {tipo:'gasto', amt:'', cur:'ARS', cat:null, cuenta:null, destino:null, amt2:'', fecha:todayISO(), cuotas:1, nota:'', deben:[], tags:[], cobroDe:null, pagoR:null};
+const form = {tipo:'gasto', amt:'', cur:'ARS', cat:null, cuenta:null, destino:null, amt2:'', fecha:todayISO(), cuotas:1, nota:'', deben:[], tags:[], cobroDe:null, pagoR:null, desde:1};
 const lastKey = () => `lauti.last.${form.tipo}.${form.cur}`;
 function cuentasOrigen(){
   const all = cuentasActivas();
@@ -689,7 +689,7 @@ function crossCurrency(){
   return form.tipo === 'transferencia' && d && d.clase !== 'tarjeta' && d.moneda !== form.cur;
 }
 function resetForm(keepTipo){
-  Object.assign(form, {amt:'', cat:null, nota:'', cuotas:1, fecha:todayISO(), deben:[], tags:[], cobroDe:null, amt2:'', pagoR:null});
+  Object.assign(form, {amt:'', cat:null, nota:'', cuotas:1, fecha:todayISO(), deben:[], tags:[], cobroDe:null, amt2:'', pagoR:null, desde:1});
   if(!keepTipo) form.tipo = 'gasto';
 }
 function renderCargar(){
@@ -702,6 +702,7 @@ function renderCargar(){
   if(form.tipo === 'transferencia' && !dest.some(c => c.id === form.destino)) form.destino = null;
   const tarjeta = form.tipo === 'gasto' && esTarjeta(form.cuenta);
   if(!tarjeta) form.cuotas = 1;
+  if(form.cuotas < 2 || form.desde > form.cuotas) form.desde = 1;
   if(form.tipo !== 'gasto') form.deben = [];
   if(form.tipo !== 'ingreso') form.cobroDe = null;
   const deud = form.tipo === 'ingreso' ? deudores(form.cur) : {};
@@ -733,7 +734,9 @@ function renderCargar(){
     <div class="chips one" style="margin-top:12px">
       <label class="chip mut on">${ICON.cal}<span id="fechaTxt">${fechaCorta(form.fecha)}</span><input type="date" id="fecha" value="${form.fecha}" aria-label="Fecha"></label>
       ${tarjeta ? `<label class="chip mut ${form.cuotas>1?'on':''}"><span id="cuotasTxt">${form.cuotas>1 ? form.cuotas + ' cuotas' : '1 pago'}</span>
-        <select id="cuotas" aria-label="Cuotas">${[1,2,3,4,5,6,9,10,12,18,24].map(n => `<option value="${n}" ${n==form.cuotas?'selected':''}>${n===1?'1 pago':n+' cuotas'}</option>`).join('')}</select></label>` : ''}
+        <select id="cuotas" aria-label="Cuotas">${[1,2,3,4,5,6,7,8,9,10,12,18,24].map(n => `<option value="${n}" ${n==form.cuotas?'selected':''}>${n===1?'1 pago':n+' cuotas'}</option>`).join('')}</select></label>` : ''}
+      ${tarjeta && form.cuotas > 1 ? `<label class="chip mut ${form.desde>1?'on':''}"><span>${form.desde > 1 ? `Ya en curso: sigue la ${form.desde}` : 'Compra nueva'}</span>
+        <select id="desde" aria-label="Compra nueva o cuotas ya en curso">${Array.from({length: form.cuotas}, (_, i) => i + 1).map(k => `<option value="${k}" ${k==form.desde?'selected':''}>${k===1 ? 'Compra nueva (empieza en la cuota 1)' : `Ya en curso: la próxima es la ${k} de ${form.cuotas}`}</option>`).join('')}</select></label>` : ''}
       ${form.tipo === 'gasto' ? `<button class="chip mut ${form.deben.length?'on':''}" id="compBtn">${ICON.ppl}${form.deben.length ? 'Compartido con ' + esc(form.deben.map(x => x.p).join(', ')) : 'Compartir'}</button>` : ''}
       ${form.tipo !== 'transferencia' ? `<button class="chip mut ${form.tags.length?'on':''}" id="tagBtn">${ICON.tag}${form.tags.length ? esc(form.tags.join(', ')) : 'Etiqueta'}</button>` : ''}
     </div>
@@ -752,6 +755,7 @@ function renderCargar(){
   if($('#amt2')) $('#amt2').oninput = e => { form.amt2 = e.target.value; updateAmt(); };
   $('#fecha').onchange = e => { form.fecha = e.target.value || todayISO(); $('#fechaTxt').textContent = fechaCorta(form.fecha); updateAmt(); };
   if($('#cuotas')) $('#cuotas').onchange = e => { form.cuotas = Number(e.target.value); renderCargar(); };
+  if($('#desde')) $('#desde').onchange = e => { form.desde = Number(e.target.value); renderCargar(); };
   if($('#compBtn')) $('#compBtn').onclick = openCompartir;
   if($('#tagBtn')) $('#tagBtn').onclick = openTags;
   $('#nota').oninput = e => form.nota = e.target.value;
@@ -777,6 +781,10 @@ function validar(){
     if(deb > val + 0.004) return {ok:false, hint:'Lo que te deben supera el total', err:true};
     const parts = [];
     if(deb > 0) parts.push(`Tu parte ${money(val - deb, form.cur)}, te deben ${money(deb, form.cur)}`);
+    if(form.cuotas > 1 && form.desde > 1){
+      const R = resumenDe(form.cuenta, form.fecha), quedan = form.cuotas - form.desde + 1;
+      return {ok:true, hint:`Poné el monto de cada cuota. Carga ${quedan === 1 ? 'la cuota' : 'las cuotas'} ${form.desde}${quedan > 1 ? ' a ' + form.cuotas : ''} de ${money(val, form.cur)}, desde el resumen de ${mesNombre(R)}${deb > 0 ? `. Te deben ${money(deb, form.cur)} por cuota` : ''}`};
+    }
     if(form.cuotas > 1) parts.push(`${form.cuotas} cuotas de ${money(val / form.cuotas, form.cur)}`);
     if(esTarjeta(form.cuenta)){ const R = resumenDe(form.cuenta, form.fecha); parts.push(form.cuotas > 1 ? `desde el resumen de ${mesNombre(R)}` : `Va al resumen de ${mesNombre(R)}`); }
     return {ok:true, hint:parts.join('. ').replace('. desde', ' desde')};
@@ -810,7 +818,17 @@ function guardar(){
   let label;
   if(form.tipo === 'gasto'){
     const n = form.cuotas;
-    if(n > 1){
+    if(n > 1 && form.desde > 1){
+      // cuotas que ya venían: se cargan de la "desde" en adelante, cada una por el monto ingresado.
+      // La fecha se corre hacia atrás para que la cuota "desde" caiga en el resumen de la fecha elegida.
+      const compraId = uid(), d = form.desde, dia = Number(form.fecha.slice(8));
+      const fechaCompra = dateIn(addMonthsYM(ymOf(form.fecha), -(d - 1)), dia);
+      for(let i = d; i <= n; i++){
+        const id = uid() + i;
+        putMov({...base, fecha:fechaCompra, id, tipo:'gasto', categoria:form.cat, monto:total, cuota:`${i}/${n}`, compraId, deben:form.deben});
+        ids.push(id);
+      }
+    } else if(n > 1){
       const compraId = uid(), cuota = Math.floor(total / n * 100) / 100, first = r2(total - cuota * (n - 1));
       for(let i = 0; i < n; i++){
         const id = uid() + i, monto = i === 0 ? first : cuota, f = monto / total;
